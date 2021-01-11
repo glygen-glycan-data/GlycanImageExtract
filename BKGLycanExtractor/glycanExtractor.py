@@ -11,6 +11,7 @@ import cv2
 import numpy as np
 import PIL,PIL.Image
 import time
+import math
 
 
 def reorientedGlycan(img):
@@ -60,7 +61,8 @@ def croplargest(img):
     out2 = cv2.bitwise_or(out, img)
     return out2
 
-def countcolors(img_file,base_configs):
+def countcolors(img_file,base_configs,log=None):
+
     return_dict = {}
     # process image input
     img_file = croplargest(img_file)
@@ -83,6 +85,8 @@ def countcolors(img_file,base_configs):
     kernel = np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])
     img_file = cv2.filter2D(img_file, -1, kernel)
     hsv = cv2.cvtColor(img_file, cv2.COLOR_BGR2HSV)
+    img_file_width = img_file.shape[0]
+    img_file_height = img_file.shape[1]
 
     # read color range in config folder
     origin = img_file.copy()
@@ -120,14 +124,25 @@ def countcolors(img_file,base_configs):
     yellows_contours = []
     return_contours = []
     for color in mask_array_name:
+        if color == "black_mask":
+            continue
         contours_list, _ = cv2.findContours(mask_dict[color],
                                             cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         contours = []
         for contour in contours_list:
 
             approx = cv2.approxPolyDP(contour, 0.035 * cv2.arcLength(contour, True), True)
-            if cv2.contourArea(contour) > 90 * mag and color != "black_mask":  # need find average size for mono
-                x, y, w, h = cv2.boundingRect(contour)
+            x, y, w, h = cv2.boundingRect(contour)
+            area = cv2.contourArea(contour)
+            squareness = abs(math.log(float(w)/float(h),2))
+            arearatio = 1e6*float(area)/(img_file_height*img_file_width)
+            if squareness < 2 and arearatio > 100:
+                if log:
+                    print(x,y,w,h,area,round(squareness,2),round(arearatio,2),color,file=log,end=" ")
+                if squareness > 0.2 or arearatio < 1000.0:
+                    if log:
+                        print("BAD",file=log)
+                    continue
                 p1 = (x, y)
                 p2 = (x + w, y + h)
                 contours.append((p1, p2))
@@ -139,6 +154,8 @@ def countcolors(img_file,base_configs):
                                 (0, 0, 255))
                     monoCount_dict["Fuc"] += 1
                     return_contours.append(("Fuc", contour))
+                    if log:
+                        print("Fuc",file=log)
 
                 elif color == "purple_mask":
                     cv2.putText(final, "NeuAc", (approx.ravel()[0], approx.ravel()[1]), cv2.FONT_HERSHEY_COMPLEX_SMALL,
@@ -146,6 +163,8 @@ def countcolors(img_file,base_configs):
                                 (0, 0, 255))
                     monoCount_dict["NeuAc"] += 1
                     return_contours.append(("NeuAc", contour))
+                    if log:
+                        print("NeuAc",file=log)
 
                 elif color == "blue_mask":
                     white = np.zeros([h, w, 3], dtype=np.uint8)
@@ -159,6 +178,8 @@ def countcolors(img_file,base_configs):
                                     (0, 0, 255))
                         monoCount_dict["GlcNAc"] += 1
                         return_contours.append(("GlcNAc", contour))
+                        if log:
+                            print("GlcNAc",file=log)
 
                     elif 0.6 < score < 0.8:
                         cv2.putText(final, "Glc", (approx.ravel()[0], approx.ravel()[1]),
@@ -166,11 +187,15 @@ def countcolors(img_file,base_configs):
                                     (0, 0, 255))
                         monoCount_dict["Glc"] += 1
                         return_contours.append(("Glc", contour))
+                        if log:
+                            print("Glc",file=log)
 
                     else:
                         cv2.putText(final, "?", (approx.ravel()[0], approx.ravel()[1]),
                                     cv2.FONT_HERSHEY_COMPLEX_SMALL, 1,
                                     (0, 0, 255))
+                        if log:
+                            print("???",file=log)
                     #cv2.imshow("blue_mask",this_blue_img)
                     #cv2.imshow("origin_mask", origin[y:y + h, x:x + w])
                     #cv2.waitKey(0)
@@ -179,6 +204,8 @@ def countcolors(img_file,base_configs):
                                 (0, 0, 255))
                     monoCount_dict["Man"] += 1
                     return_contours.append(("Man", contour))
+                    if log:
+                        print("Man",file=log)
 
                 elif color == "yellow_mask":
 
@@ -196,6 +223,8 @@ def countcolors(img_file,base_configs):
                                     (0, 0, 255))
                         monoCount_dict["GalNAc"] += 1
                         return_contours.append(("GalNAc", contour))
+                        if log:
+                            print("GalNAc",file=log)
 
                     elif 0.6 < score < 0.9:
                         cv2.putText(final, "Gal", (approx.ravel()[0], approx.ravel()[1]),
@@ -203,13 +232,17 @@ def countcolors(img_file,base_configs):
                                     (0, 0, 255))
                         monoCount_dict["Gal"] += 1
                         return_contours.append(("Gal", contour))
+                        if log:
+                            print("Gal",file=log)
 
                     else:
                         cv2.putText(final, "?", (approx.ravel()[0], approx.ravel()[1]),
                                     cv2.FONT_HERSHEY_COMPLEX_SMALL, 1,
                                     (0, 0, 255))
+                        if log:
+                            print("???",score,file=log)
 
-        pass
+    #     pass
     # print("herte",yellows_contours)
     # cv2.imshow("yellow_mask",all_mask)
     # cv2.imshow("final", final)
@@ -503,7 +536,7 @@ def buildglycan(mono_dict):
         glycoCT =g.glycoct()
     elif root_node ==None:
         #print("Error in glycan structure")
-        glycoCT = "Error in glycan structure"
+        glycoCT = None
 
     return glycoCT
 

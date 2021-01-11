@@ -1,0 +1,176 @@
+
+from APIFramework import APIFrameWork
+from BKGLycanExtractor.annotatePDF import annotatePDFGlycan, annotatePNGGlycan
+
+from shutil import copyfile
+
+import os
+import sys
+import time
+import random
+import hashlib
+import multiprocessing
+import secrets
+import flask
+import traceback
+
+
+class ReferenceAPIParaBased(APIFrameWork):
+    pass
+
+
+import subprocess
+class ReferenceAPIFileBased(APIFrameWork):
+
+    def form_task(self, p):
+        res = {}
+
+        # Prevent name collision
+        task_str = p["original_file_name"] + str(random.randint(10000, 99999))
+        task_str = task_str.encode("utf-8")
+        list_id = hashlib.sha256(task_str).hexdigest()
+
+        res["id"] = list_id
+        res["original_file_name"] = p["original_file_name"]
+
+        return res
+
+    @staticmethod
+    def worker(pid, task_queue, result_queue, params):
+        print(pid, "Start")
+
+        while True:
+            task_detail = task_queue.get(block=True)
+
+            error = []
+            calculation_start_time = time.time()
+
+            original_file_name = task_detail["original_file_name"]
+
+
+            list_id = task_detail["id"]
+
+            # TODO finished by you from here##############################################################
+            input_folder = os.path.join(os.getcwd(), "input")
+            print("task_detail",task_detail)
+
+            print(task_detail["original_file_name"])
+
+            input_file = os.path.join("input", task_detail["id"])
+            output_file_abs_path = os.path.abspath(os.path.join("output", list_id))
+
+            origfilename = task_detail["original_file_name"]
+            token = list_id
+
+            os.makedirs(os.path.join("./static/files", token, "input"))
+            os.makedirs(os.path.join("./static/files", token, "output"))
+            workdir = os.path.join("./static/files", token)
+
+            #infilename = os.path.join(workdir, "input", origfilename)
+            infilename = os.path.join(workdir, "input", origfilename)
+            outfilename = os.path.join(workdir, "output", "annotated_" + origfilename)
+
+
+            base_configs = "./BKGLycanExtractor/configs/"
+            outfilename2 = output_file_abs_path
+            work_dict = {
+                "token": str(token),
+                "workdir": str(workdir),
+                "infilename": str(infilename),
+                "outfilename": str(outfilename),
+                "base_configs": str(base_configs),
+                "origfilename": str(origfilename),
+                "outfilename2": str(outfilename2),
+                "input_file": str(input_file)
+            }
+
+            '''print("#############calling subprocess here################\n\n\n\n")
+            print("python3", "python3example.py", work_dict["token"], "workdir", work_dict["workdir"],"infilename", work_dict["infilename"], "outfilename", work_dict["outfilename"], "base_configs",work_dict["base_configs"], "origfilename", work_dict["origfilename"], "outfilename2",work_dict["outfilename2"])
+            print("python", "python3example.py", work_dict["token"], work_dict["workdir"],work_dict["infilename"], work_dict["outfilename"], work_dict["base_configs"],work_dict["origfilename"], work_dict["outfilename2"], work_dict["input_file"])
+            subprocess.call(["python", "python3example.py", work_dict["token"], work_dict["workdir"],work_dict["infilename"], work_dict["outfilename"], work_dict["base_configs"],work_dict["origfilename"], work_dict["outfilename2"], work_dict["input_file"]])
+            '''
+            try:
+                copyfile(work_dict["input_file"], work_dict["infilename"])
+            except FileNotFoundError:
+                time.sleep(5)
+                copyfile(work_dict["input_file"], work_dict["infilename"])
+
+            extn = origfilename.lower().rsplit('.',1)[1]
+            if extn in ('png','jpg','jpeg'):
+                try:
+                    annotatePNGGlycan(work_dict) 
+                except Exception as e:
+                    error.append('File %s generated an exception in annotatePNGGalycan: %s'%(origfilename,e))
+                    # self.output(1,traceback.format_exc())
+            elif extn in ('pdf',):
+                try:
+                    annotatePDFGlycan(work_dict)
+                except Exception as e:
+                    error.append('File %s generated an exception in annotatePDFGlycan: %s'%(origfilename,e))
+                    # self.output(1,traceback.format_exc())
+            else:
+                error.append('File %s had an Unsupported file extension: %s.'%(origfilename,extn))
+                # self.output(1,'File %s had an Unsupported file extension: %s.'%(origfilename,extn))
+
+
+            #print("#############end calling subprocess here################\n\n\n\n")
+
+
+            # TODO END#####################################################################################
+
+
+
+            calculation_end_time = time.time()
+            calculation_time_cost = calculation_end_time - calculation_start_time
+
+            # option = {"as_attachment": True}
+            option = {"as_attachment": True, "mimetype": 'application/pdf'}
+
+            res = {
+                "id": list_id,
+                "start time": calculation_start_time,
+                "end time": calculation_end_time,
+                "runtime": calculation_time_cost,
+                "error": error,
+                "glycans": work_dict.get('results',[]),
+                "rename": "annotated_"+original_file_name,
+                "output_file_abs_path": output_file_abs_path,
+                "flask_download_option": option,
+                "inputtype": extn
+            }
+            result_queue.put(res)
+
+
+    def home(self):
+        base_example = os.path.join("static/examples")
+        return flask.render_template(self._home_html, basedir=base_example)
+
+    def examples(self):
+        base_example = os.path.join("static/examples")
+        return flask.render_template(self._examples_html, basedir=base_example)
+
+    def edwardslab(self):
+        base_example = os.path.join("static/examples")
+        return flask.render_template(self._edwardslab_html, basedir=base_example)
+
+    def abstract(self):
+        base_example = os.path.join("static/pdfexamples")
+        return flask.render_template(self._abstract_html, basedir=base_example)
+
+if __name__ == '__main__':
+    multiprocessing.freeze_support()
+
+    fb_api = ReferenceAPIFileBased()
+    fb_api.parse_config("GlyImageExtractor.ini")
+
+    fb_api.start()
+
+
+
+
+
+
+
+
+
+

@@ -1,4 +1,0 @@
-pip install opencv-contrib-python
-pip install pymupdf
-pip install request
-pip install future

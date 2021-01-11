@@ -1,6 +1,8 @@
-import fitz, sys, os, cv2,shutil, pdfplumber, time, ntpath, json
-from .submit import searchGlycoCT
+import fitz, sys, os, cv2,shutil, pdfplumber, time, ntpath, json, base64
+from .submit import searchGlycoCTnew
 from .glycanExtractor import compare2img, countcolors, extractGlycanTopology,buildglycan
+from .pygly3.GlycanFormatter import GlycoCTFormat, GlycoCTParseError
+
 import numpy as np
 from shutil import *
 ##########  this script take both pdfplumber to extract coordinate and fitz to manipulate pdf file
@@ -41,7 +43,7 @@ def extract_img_obj(path):
     return array
 
 
-def findglycans(image_path,workdir,base_configs):
+def findglycans(image_path,workdir,base_configs,log=None):
     #extract location of all glycan from image file path
     array = []
     base = os.getcwd()
@@ -124,7 +126,7 @@ def findglycans(image_path,workdir,base_configs):
                 boxes.append([x, y, w, h, confidence])
                 confidences.append(float(confidence))
                 class_ids.append(class_id)
-    # cv.dnn.NMSBoxesRotated(	bboxes, scores, score_threshold, nms_threshold[, eta[, top_k]]	)
+    # cv.dnn.NMSBoxesRotated(        bboxes, scores, score_threshold, nms_threshold[, eta[, top_k]]        )
     indexes = cv2.dnn.NMSBoxes(boxes, confidences, 0.5, 0.4)
     #print(f"\nGlycan detected: {len(boxes)}")
     #print(f"Path: {image_path}")
@@ -148,15 +150,18 @@ def findglycans(image_path,workdir,base_configs):
             #cv2.imshow("Image", aux_cropped)
             #cv2.waitKey(0)
 
+            basename = ntpath.basename(image_path).split('.')[0]
+            if log:
+                print(f"\nImageRef: {basename}-{str(count)}",file=log)
 
             count+=1
-            count_dictionary,final,origin,mask_dict, return_contours = countcolors(aux_cropped,base_configs)
+            count_dictionary,final,origin,mask_dict, return_contours = countcolors(aux_cropped,base_configs,log)
             save_origin=origin.copy()
             mono_dict, a, b = extractGlycanTopology(mask_dict, return_contours, origin)
             if mono_dict!={}:
                 glycoCT = buildglycan(mono_dict)
             else:
-                glycoCT = "GlycoCT error. buildglycan"
+                glycoCT = None
 
             #print("glycoCT is", buildglycan(mono_dict))
             all_masks = list(mask_dict.keys())
@@ -164,18 +169,20 @@ def findglycans(image_path,workdir,base_configs):
             all_masks = sum([mask_dict[a] for a in all_masks])
 
             #print(image_path)
-            basename = ntpath.basename(image_path).split('.')[0]
+            #basename = ntpath.basename(image_path).split('.')[0]
             try:
                 os.makedirs(f"{workdir}/test/{basename}-{str(count)}/")
             except FileExistsError:
                 pass
+            # dummy,save_origin_png = cv2.imencode(".png", save_origin)
+            save_origin_url = f"test/{basename}-{str(count)}/save_origin.png"
             cv2.imwrite(f"{workdir}/test/{basename}-{str(count)}/save_origin.png", save_origin)
             cv2.imwrite(f"{workdir}/test/{basename}-{str(count)}/final.png", final)
-            cv2.imwrite(f"{workdir}/test/{basename}-{str(count)}/-black_mask.png", mask_dict["black_mask"])
-            cv2.imwrite(f"{workdir}/test/{basename}-{str(count)}/-all_mask.png", all_masks)
+            cv2.imwrite(f"{workdir}/test/{basename}-{str(count)}/black_mask.png", mask_dict["black_mask"])
+            cv2.imwrite(f"{workdir}/test/{basename}-{str(count)}/all_mask.png", all_masks)
             cv2.imwrite(f"{workdir}/test/{basename}-{str(count)}/a.png", a)
             cv2.imwrite(f"{workdir}/test/{basename}-{str(count)}/b.png", b)
-            array.append((x/width,y/height,(x+w)/width,(y+h)/height,confidence,count_dictionary,basename+"-"+str(count),glycoCT))
+            array.append((x/width,y/height,(x+w)/width,(y+h)/height,confidence,count_dictionary,basename+"-"+str(count),glycoCT,save_origin_url))
 
     #if image.shape[0] > 1500 or image.shape[1] > 1200:
     #    image = cv2.resize(image, None, fx=0.5, fy=0.5)  # , None, fx=1, fy=1)
@@ -183,19 +190,105 @@ def findglycans(image_path,workdir,base_configs):
     #key = cv2.waitKey(0)
     return array #%of xy coordinate and with/height percentage
 
+def compstr(counts):
+    s = ""
+    for sym,count in sorted(counts.items()):
+        if count > 0:
+            s += "%s(%d)"%(sym,count)
+    return s
 
-def jobstate(work_dict,state=False):
-    outfilename = work_dict["outfilename"]
+def jobstate(work_dict,state=False,results=None):
     work_dict["job_finished"]=state
-    job_log_file = open(outfilename.replace(".pdf", "_job.json"), "w+")
-
+    work_dict["results"] = results
+    job_log_file = open(work_dict['joblogfile'], "w+")
     json.dump(work_dict,job_log_file)
-
-    #job_log.write(json_to_write)
-    #job_log.close()
-
+    job_log_file.close()
     return True
 
+def annotatePNGGlycan(work_dict):
+    token=work_dict["token"]
+    path=work_dict["infilename"]
+    workdir=work_dict["workdir"]
+    outfilename=work_dict["outfilename"]
+    outfilename2 = work_dict["outfilename2"]
+    base_configs=work_dict["base_configs"]
+    
+    work_dict["joblogfile"] = (outfilename.rsplit('.',1)[0]+"_job.json")
+    work_dict["annotatelogfile"] = (outfilename.rsplit('.',1)[0]+"_log.txt")
+
+    annotate_log=open(work_dict["annotatelogfile"],"w+")
+    print(work_dict,file=annotate_log)
+    
+    jobstate(work_dict,False)
+
+    try:
+        checkpath(workdir)
+    except PermissionError:
+        checkpath(workdir)
+    
+    image_names = []
+
+    annotate_log.write(f"{token}\n{path}\n{outfilename}")
+
+    gctparser = GlycoCTFormat()
+
+    results = []
+    for glycanindex,found_glycan in enumerate(findglycans(path,workdir,base_configs,annotate_log)):
+        g_x0,g_y0,g_x1,g_y1,confidence,count_dictionary,glycan_id,glycoCT,origimage=found_glycan
+    
+        total_count = count_dictionary['Glc']+count_dictionary['GlcNAc']+\
+                      count_dictionary['GalNAc']+count_dictionary['NeuAc']+\
+                      count_dictionary['Man']+count_dictionary['Gal']+count_dictionary['Fuc']
+
+        accession = None
+        if glycoCT:
+            try:
+                g = gctparser.toGlycan(glycoCT)
+            except GlycoCTParseError:
+                g = None
+            if g:
+                comp = g.iupac_composition()
+                comptotal = sum(map(comp.get,("Glc","GlcNAc","Gal","GalNAc","NeuAc","Man","Fuc")))
+                if comptotal == total_count:
+                    annotate_log.write(f"\nsubmitting:{glycoCT}")
+                    accession = searchGlycoCTnew(glycoCT)
+                else:
+                    glycoCT = None
+            else:
+                glycoCT = None
+
+        result = dict(name=compstr(count_dictionary),
+                      imageurl=f"static/files/{token}/{origimage}",
+                      confidence=str(round(confidence,2)),page=1,figure=1,
+                      imgref="%s-%d"%(os.path.split(path)[1].rsplit('.')[0],glycanindex))
+        if glycoCT:
+            result['glycoct'] = glycoCT
+
+        uri_base="https://gnome.glyomics.org/StructureBrowser.html?"
+        if not accession:
+            annotate_log.write(f"\nfound: None")
+            glycan_uri=uri_base+f"Glc={count_dictionary['Glc']}&GlcNAc={count_dictionary['GlcNAc']}&GalNAc={count_dictionary['GalNAc']}&NeuAc={count_dictionary['NeuAc']}&Man={count_dictionary['Man']}&Gal={count_dictionary['Gal']}&Fuc={count_dictionary['Fuc']}"
+            result['linktype'] = 'composition'
+            if glycoCT:
+                result['linkexpl'] = 'composition, extracted topology not found'
+            else:
+                result['linkexpl'] = 'composition, topology not extracted'
+            result['gnomeurl'] = glycan_uri
+        else:
+            annotate_log.write(f"\nfound: {accession}")
+            glycan_uri =uri_base+"focus="+accession
+            result['linktype'] = 'topology'
+            result['linkexpl'] = 'topology extracted and found'
+            result['gnomeurl'] = glycan_uri
+
+        if total_count > 0:
+            results.append(result)
+
+    annotate_log.close()
+
+    jobstate(work_dict, True, results)
+
+    return True    
 
 def annotatePDFGlycan(work_dict):
     token=work_dict["token"]
@@ -205,20 +298,24 @@ def annotatePDFGlycan(work_dict):
     outfilename2 = work_dict["outfilename2"]
     base_configs=work_dict["base_configs"]
 
+    work_dict["joblogfile"] = outfilename.rsplit('.',1)[0]+"_job.json"
+    work_dict["annotatelogfile"] = outfilename.rsplit('.',1)[0]+"_log.txt"
+    
     jobstate(work_dict,False)
-
 
     try:
         checkpath(workdir)
     except PermissionError:
         checkpath(workdir)
     image_names = []
-    annotate_log=open(outfilename.replace(".pdf","_log.txt"),"a")
+    annotate_log=open(work_dict["annotatelogfile"],"a")
 
     annotate_log.write(f"{token}\n{path}\n{outfilename}")
     # get image name list
     #stream = open(path,"rb").read()
     doc = fitz.open(path)
+
+    results = []
 
     image_array = extract_img_obj(path)
     #print(f"Found {len(image_array)} Figures.")
@@ -228,7 +325,7 @@ def annotatePDFGlycan(work_dict):
         img_list = [image for image in image_array if image[0]==(p+1)]
         #print(f"##### {page} found figures: {len(img_list)}")
         annotate_log.write(f"\n##### {page} found figures: {len(img_list)}")
-        for img in img_list:
+        for imgindex,img in enumerate(img_list):
             xref = img[2]
             img_name = f"{p}-{img[1]}"
             x0, y0, x1, y1 = img[3]
@@ -247,36 +344,51 @@ def annotatePDFGlycan(work_dict):
                 annotate_log.write(f"\n save image to {workdir}test/p{p}-{xref}.png")
 
                 #time.sleep(0.1)
-                array = findglycans(rf"{workdir}/test/p{p}-{xref}.png",workdir,base_configs) # find glycan using object classification algorihtm
+                array = findglycans(rf"{workdir}/test/p{p}-{xref}.png",workdir,base_configs,log=annotate_log) # find glycan using object classification algorihtm
                 #print(f"Glycans Found")
                 annotate_log.write(f"\nGlycans Found")
 
-                for glycan_bbox in array:
-                    g_x0,g_y0,g_x1,g_y1,confidence,count_dictionary,glycan_id,glycoCT=glycan_bbox
+                for glycanindex,glycan_bbox in enumerate(array):
+                    g_x0,g_y0,g_x1,g_y1,confidence,count_dictionary,glycan_id,glycoCT,origimage=glycan_bbox
                     #print(count_dictionary)
                     imgcoordinate_page= (x0+g_x1*float(x1-x0),  y0+g_y1*float(y1-y0))
 
                     total_count = count_dictionary['Glc']+count_dictionary['GlcNAc']+count_dictionary['GalNAc']+count_dictionary['NeuAc']+count_dictionary['Man']+count_dictionary['Gal']+count_dictionary['Fuc']
 
                     #predict accession
-                    if glycoCT!="Error in glycan structure" and total_count <= int(glycoCT.count("\n")/2):
-                        #print("submitting:", [glycoCT])
+                    accession = None
+                    if glycoCT and total_count <= int(glycoCT.count("\n")/2):
                         annotate_log.write(f"\nsubmitting:{[glycoCT]}")
+                        accession = searchGlycoCTnew(glycoCT)
 
-                        accession = searchGlycoCT(glycoCT)
-                        #print("found:", accession)
-                        annotate_log.write(f"\nfound: {accession}")
-                    else:
-                        accession="Not found"
-                        #print("found:", accession)
-                        annotate_log.write(f"\nfound: {accession}")
+                    result = dict(name=compstr(count_dictionary),
+                                  imageurl=f"static/files/{token}/{origimage}",
+                                  confidence=str(round(confidence,2)),page=(p+1),figure=(imgindex+1),
+                                  imgref=rf"p{p}-{xref}-{glycanindex}")
+                    if glycoCT:
+                        result['glycoct'] = glycoCT
 
                     ############annotation of glycan image here#############################
                     uri_base="https://gnome.glyomics.org/StructureBrowser.html?"
-                    if accession=="Not found":
+                    if not accession:
+                        annotate_log.write(f"\nfound: None")
                         glycan_uri=uri_base+f"Glc={count_dictionary['Glc']}&GlcNAc={count_dictionary['GlcNAc']}&GalNAc={count_dictionary['GalNAc']}&NeuAc={count_dictionary['NeuAc']}&Man={count_dictionary['Man']}&Gal={count_dictionary['Gal']}&Fuc={count_dictionary['Fuc']}"
+                        result['linktype'] = 'composition'
+                        if glycoCT:
+                            result['linkexpl'] = 'composition, extracted topology not found'
+                        else:
+                            result['linkexpl'] = 'composition, topology not extracted'
+                        result['gnomeurl'] = glycan_uri
                     else:
+                        annotate_log.write(f"\nfound: {accession}")
                         glycan_uri =uri_base+"focus="+accession
+                        result['linktype'] = 'topology'
+                        result['linkexpl'] = 'topology extracted and found'
+                        result['gnomeurl'] = glycan_uri
+
+                    if total_count > 0:
+                        results.append(result)
+
                     page.insertLink({'kind': 2, 'from': fitz.Rect(x0+g_x0*float(x1-x0),y0+g_y0*float(y1-y0),x0+g_x1*float(x1-x0),y0+g_y1*float(y1-y0)), 'uri': glycan_uri})
                     comment = f"Glycan id: {glycan_id} found with {str(confidence * 100)[:5]}% confidence."  # \nDebug:{count_dictionary}|"+str(imgcoordinate_page)+f"|{str(x1-x0)},{g_x1},{y1-y0},{g_y1}"
                     comment += f'\nPredicted accession:\n{accession}'
@@ -292,7 +404,7 @@ def annotatePDFGlycan(work_dict):
     #doc.save(f"{workdir}/output/Result.pdf")
     annotate_log.close()
 
-    jobstate(work_dict, True)
+    jobstate(work_dict, True, results)
 
     return True
 
@@ -309,6 +421,7 @@ if __name__ =="__main__":
                 "outfilename2": outfilename2
             }
     '''
+    '''
     work_dict = {
         "token": sys.argv[1],
         "workdir": sys.argv[2],
@@ -318,16 +431,16 @@ if __name__ =="__main__":
         "origfilename": sys.argv[6],
         "outfilename2": sys.argv[7]
     }
-    annotatePDFGlycan(work_dict)
-    #example
     '''
-    work_dict = {
+    # annotatePDFGlycan(work_dict)
+    #example
+    work_dict_example0 = {
         "token": "Example0",
         "workdir": "tmp",
         "infilename": "tmp/Example0.pdf",
         "outfilename": "tmp/Anotate_Example0.pdf",
-        "base_configs": "configs",
+        "base_configs": "configs/",
         "origfilename": "Example0.pdf",
         "outfilename2": "Example02.pdf"
     }
-    '''
+    annotatePDFGlycan(work_dict_example0)
