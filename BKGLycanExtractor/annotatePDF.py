@@ -100,22 +100,31 @@ def findglycans(image_path,workdir,base_configs,log=None):
                 w = int(detection[2] * (width+white_space))
                 h = int(detection[3] * (height+white_space))
 
-                # Rectangle coordinates
+                # Rectangle coordinates # where do these constants come from?
+		# Looks like 0.2*w padding on left and right,
+		# 0.2*h padding on top and bottom
                 x = int(center_x - w / 2)-int(0.2*w)
                 y = int(center_y - h / 2)-int(0.2*h)
-
-                w=int(1.4*w)
+                w = int(1.4*w)
                 h = int(1.4 * h)
+
                 # fix bug that prevent the image to be crop outside the figure object
                 if x<=0:
                     x=0
                 if y <=0:
                     y=0
-
                 if x+w >= (width):
                     w=int((width)-x)
                 if y+h >= (height):
                     h=int((height)-y)
+
+                # If we are almost the entire image anyway, avoid cropping errors...
+                if log:
+                    print("\nEntire image?",x,w,width,float(w)/width,y,h,height,float(h)/height,w*h,width*height,float(w*h)/(width*height),file=log)
+                if w*h > 0.8*0.8*width*height:
+                    if log:
+                         print("Reset to entire image...",file=log)
+                    x = 0; y = 0; w = width; h = height
 
                 p1 = (x,y)
                 p2 = (x+w,y+h)

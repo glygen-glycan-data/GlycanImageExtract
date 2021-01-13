@@ -12,6 +12,7 @@ import hashlib
 import multiprocessing
 import secrets
 import flask
+import json
 import traceback
 
 
@@ -138,24 +139,26 @@ class ReferenceAPIFileBased(APIFrameWork):
                 "flask_download_option": option,
                 "inputtype": extn
             }
+        
             result_queue.put(res)
-
+            res = dict(id=list_id,result=res,finished=True,submission_detail=task_detail)
+            wh = open(f"static/files/{list_id}/results.json",'w')
+            wh.write(json.dumps(res))
+            wh.close()
 
     def home(self):
-        base_example = os.path.join("static/examples")
-        return flask.render_template(self._home_html, basedir=base_example)
+        return flask.render_template(self._home_html)
 
     def examples(self):
-        base_example = os.path.join("static/examples")
-        return flask.render_template(self._examples_html, basedir=base_example)
-
-    def edwardslab(self):
-        base_example = os.path.join("static/examples")
-        return flask.render_template(self._edwardslab_html, basedir=base_example)
+        return flask.render_template(self._examples_html, basedir="static/examples")
 
     def abstract(self):
-        base_example = os.path.join("static/pdfexamples")
-        return flask.render_template(self._abstract_html, basedir=base_example)
+        return flask.render_template(self._abstract_html)
+
+    def result(self):
+        id = flask.request.args['id']
+        print(f"{id}\n",file=sys.stderr)
+        return flask.render_template(self._result_html, list_id=id)
 
 if __name__ == '__main__':
     multiprocessing.freeze_support()

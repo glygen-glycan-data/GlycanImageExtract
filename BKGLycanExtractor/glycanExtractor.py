@@ -136,10 +136,11 @@ def countcolors(img_file,base_configs,log=None):
             area = cv2.contourArea(contour)
             squareness = abs(math.log(float(w)/float(h),2))
             arearatio = 1e6*float(area)/(img_file_height*img_file_width)
-            if squareness < 2 and arearatio > 100:
+            arearatio1 = 1000*area/float(w*h)
+            if squareness < 2 and arearatio > 100 and arearatio1 > 200:
                 if log:
-                    print(x,y,w,h,area,round(squareness,2),round(arearatio,2),color,file=log,end=" ")
-                if squareness > 0.2 or arearatio < 1000.0:
+                    print(x,y,w,h,area,round(squareness,2),round(arearatio,2),round(arearatio1,2),color,file=log,end=" ")
+                if squareness > 0.25 or arearatio < 1000.0 or arearatio1 < 500:
                     if log:
                         print("BAD",file=log)
                     continue
@@ -181,7 +182,7 @@ def countcolors(img_file,base_configs,log=None):
                         if log:
                             print("GlcNAc",file=log)
 
-                    elif 0.6 < score < 0.8:
+                    elif 0.5 < score < 0.8:
                         cv2.putText(final, "Glc", (approx.ravel()[0], approx.ravel()[1]),
                                     cv2.FONT_HERSHEY_COMPLEX_SMALL, 1,
                                     (0, 0, 255))
@@ -226,7 +227,7 @@ def countcolors(img_file,base_configs,log=None):
                         if log:
                             print("GalNAc",file=log)
 
-                    elif 0.6 < score < 0.9:
+                    elif 0.5 < score < 0.9:
                         cv2.putText(final, "Gal", (approx.ravel()[0], approx.ravel()[1]),
                                     cv2.FONT_HERSHEY_COMPLEX_SMALL, 1,
                                     (0, 0, 255))

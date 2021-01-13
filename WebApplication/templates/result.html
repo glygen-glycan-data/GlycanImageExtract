@@ -1,7 +1,7 @@
 {% include 'header.html' %}
 
 <div id="result">
-  <h3>Your file has been successfully uploaded for analysis</h3>
+  <h3>Your file has been successfully uploaded for analysis.</h3>
 
   <h3 id="info">Please wait</h3>
 </div>
@@ -60,8 +60,13 @@
 	if (result.result.inputtype == "pdf") {
 	    resstr += "<A target=\"_blank\" href=\"file_download?list_id="+list_id+"\">Annotated PDF</A>, "
         }
-	resstr += "<A href=\"retrieve?list_ids=[%22"+list_id+"%22]\" target=\"_blank\">JSON format</A>.";
-        resstr += "</h3>";
+	resstr += "<A href=\"retrieve?list_ids=[%22"+list_id+"%22]\" target=\"_blank\">JSON format</A> (";
+	if (result.result.inputtype == "pdf") {
+	    resstr += "<A target=\"_blank\" href=\""+"static/files/"+result.id+"/input/"+encodeURIComponent(result.submission_detail.original_file_name)+"\">Original PDF</A>"
+	} else {
+	    resstr += "<A target=\"_blank\" href=\""+"static/files/"+result.id+"/input/"+encodeURIComponent(result.submission_detail.original_file_name)+"\">Original Image</A>"
+	}
+        resstr += ") [<A href=\""+"result?id="+result.id+"\">Bookmark</A>].</h3>";
 	reselt.innerHTML = resstr;
 	
 	document.getElementById("extracted").style="display: block;";

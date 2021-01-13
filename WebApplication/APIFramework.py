@@ -11,6 +11,7 @@ import werkzeug
 import atexit
 import hashlib
 import multiprocessing
+import json
 
 try:
     # Python3 import
@@ -70,8 +71,8 @@ class APIFrameWork:
         self._home_html = None
 
         self._examples_html = "examples.html"
-        self._edwardslab_html = "edwardslab.html"
         self._abstract_html = "abstract.html"
+        self._result_html = "result.html"
 
 
         self._file_upload_finished_html = None
@@ -299,6 +300,8 @@ class APIFrameWork:
             thing = {"Error": "list_id (%s) not found" % list_id}
             if list_id in self.result_cache:
                 thing = self.result_cache[list_id]
+            elif os.path.exists(f"static/files/{list_id}/results.json"):
+                thing = json.loads(open(f"static/files/{list_id}/results.json").read())
             res.append(thing)
 
         return flask.jsonify(res)
@@ -422,10 +425,9 @@ class APIFrameWork:
         # TODO custom route?
         self._flask_app.add_url_rule("/", "home", self.home, methods=["GET", "POST"])
         self._flask_app.add_url_rule("/retrieve", "retrieve", self.retrieve, methods=["GET", "POST"])
-
         self._flask_app.add_url_rule("/abstract", "abstract", self.abstract, methods=["GET", "POST"])
         self._flask_app.add_url_rule("/examples", "examples", self.examples, methods=["GET", "POST"])
-        self._flask_app.add_url_rule("/edwardslab", "edwardslab", self.edwardslab, methods=["GET", "POST"])
+        self._flask_app.add_url_rule("/result", "result", self.result, methods=["GET", "POST"])
 
         if self._file_based_job:
             self._flask_app.add_url_rule("/file_upload", "upload_file", self.upload_file, methods=["GET", "POST"])
