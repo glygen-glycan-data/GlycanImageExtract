@@ -10,6 +10,21 @@ def request(target,**kw):
     baseurl = "http://localhost:10986/"
     return json.loads(urlopen(baseurl+target,urlencode(kw).encode('utf8')).read())
 
+def request1(target,**kw):
+    baseurl = "https://subsumption.glyomics.org/"
+    return json.loads(urlopen(baseurl+target,urlencode(kw).encode('utf8')).read())
+
+def sendToGNOme(*seqs):
+    seqparams = dict()
+    for i,seq in enumerate(seqs):
+        seqparams['Query'] = seq.strip()
+    params = dict(seqs=seqparams)
+    data = request1("submit",tasks=json.dumps([params]))
+    jobids = []
+    for job in data:
+        jobids.append(job["id"])
+    return jobids[-1]
+
 def searchGlycoCTnew(*seqs, delay=1, maxretry=10):
     params = []
     for seq in seqs:

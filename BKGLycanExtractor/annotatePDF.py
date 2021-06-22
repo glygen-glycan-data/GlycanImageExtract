@@ -1,5 +1,5 @@
 import fitz, sys, os, cv2,shutil, pdfplumber, time, ntpath, json, base64
-from .submit import searchGlycoCTnew
+from .submit import searchGlycoCTnew,  sendToGNOme
 from .glycanExtractor import compare2img, countcolors, extractGlycanTopology,buildglycan
 from .pygly3.GlycanFormatter import GlycoCTFormat, GlycoCTParseError
 
@@ -101,8 +101,8 @@ def findglycans(image_path,workdir,base_configs,log=None):
                 h = int(detection[3] * (height+white_space))
 
                 # Rectangle coordinates # where do these constants come from?
-		# Looks like 0.2*w padding on left and right,
-		# 0.2*h padding on top and bottom
+                # Looks like 0.2*w padding on left and right,
+                # 0.2*h padding on top and bottom
                 x = int(center_x - w / 2)-int(0.2*w)
                 y = int(center_y - h / 2)-int(0.2*h)
                 w = int(1.4*w)
@@ -261,6 +261,8 @@ def annotatePNGGlycan(work_dict):
                 if comptotal == total_count:
                     annotate_log.write(f"\nsubmitting:{glycoCT}")
                     accession = searchGlycoCTnew(glycoCT)
+                    if not accession:
+                        accession = sendToGNOme(glycoCT)
                 else:
                     glycoCT = None
             else:
@@ -281,13 +283,16 @@ def annotatePNGGlycan(work_dict):
             if glycoCT:
                 result['linkexpl'] = 'composition, extracted topology not found'
             else:
-                result['linkexpl'] = 'composition, topology not extracted'
+                result['linkexpl'] = 'composition only, topology not extracted'
             result['gnomeurl'] = glycan_uri
         else:
             annotate_log.write(f"\nfound: {accession}")
-            glycan_uri =uri_base+"focus="+accession
+            if accession.startswith('G'):
+                glycan_uri =uri_base+"focus="+accession
+            else:
+                glycan_uri =uri_base+"ondemandtaskid="+accession
             result['linktype'] = 'topology'
-            result['linkexpl'] = 'topology extracted and found'
+            result['linkexpl'] = 'topology extracted'
             result['gnomeurl'] = glycan_uri
 
         if total_count > 0:
