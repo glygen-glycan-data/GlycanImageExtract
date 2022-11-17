@@ -6,8 +6,10 @@ import requests
 from urllib.request import urlopen
 from urllib.parse import urlencode
 
+devemail="nje5+converter@georgetown.edu"
+
 def request(target,**kw):
-    baseurl = "http://localhost:10986/"
+    baseurl = "https://glylookup.glyomics.org/"
     return json.loads(urlopen(baseurl+target,urlencode(kw).encode('utf8')).read())
 
 def request1(target,**kw):
@@ -19,7 +21,7 @@ def sendToGNOme(*seqs):
     for i,seq in enumerate(seqs):
         seqparams['Query'] = seq.strip()
     params = dict(seqs=seqparams)
-    data = request1("submit",tasks=json.dumps([params]))
+    data = request1("submit",task=json.dumps(params),developer_email=devemail)
     jobids = []
     for job in data:
         jobids.append(job["id"])
@@ -30,14 +32,14 @@ def searchGlycoCTnew(*seqs, delay=1, maxretry=10):
     for seq in seqs:
         param = dict(seq=seq.strip())
         params.append(param)
-    data = request("submit",tasks=json.dumps(params))
+    data = request("submit",tasks=json.dumps(params),developer_email=devemail)
     jobids = []
     for job in data:
         jobids.append(job["id"])
 
     nretries = 0
     while True:
-        data = request("retrieve",list_ids=json.dumps(jobids))
+        data = request("retrieve",task_ids=json.dumps(jobids))
         done = True
         for job in data:
             if not job.get('finished'):
@@ -53,8 +55,8 @@ def searchGlycoCTnew(*seqs, delay=1, maxretry=10):
     retval = []
     for job in data:
         result = None
-        for gtc in job.get("result",[]):
-            result = gtc
+        for res in job.get("result",[]):
+            result = res['accession']
             break
         retval.append(result)
 
@@ -76,17 +78,17 @@ def searchGlycoCT(seq, delay=0.5, maxretry=1):
     try:
         response1 = requests.post(main_url + "submit", params)
         response_json = response1.json()
-        list_ids = list(response_json.values())
+        task_ids = list(response_json.values())
     except Exception as e:
         sys.stdout.write("Error: has issue connecting to flask API.")
         sys.stdout.write(str(e))
         sys.exit()
 
     # the list id for retrieval later
-    #print (list_ids,"list_ids here")
+    #print (task_ids,"task_ids here")
     #print ("\n" * 3)
 
-    params = {"q": json.dumps(list_ids)}
+    params = {"q": json.dumps(task_ids)}
 
     # might require larger wait time in case you send a huge amount of GlycoCTs
     for i in range(maxretry):
@@ -97,12 +99,12 @@ def searchGlycoCT(seq, delay=0.5, maxretry=1):
         results = response2.json()
         #print("results here",results)
 
-        for list_id, res in results.items():
-            #print(f"list_id:{list_id}")
+        for task_id, res in results.items():
+            #print(f"task_id:{task_id}")
             #print(res['result']['error'])
             #print("res:", res["result"]['hits'])
             if res['finished']==True and res["result"]['hits']!=[]:
-                accession=res['result']['hits'][0]
+                accession=res['result']['hits'][0]['accession']
                 return accession
             else:
                 continue

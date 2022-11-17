@@ -101,14 +101,14 @@ class ReferenceAPIFileBased(APIFrameWork):
                 try:
                     annotatePNGGlycan(work_dict) 
                 except Exception as e:
-                    error.append('File %s generated an exception in annotatePNGGalycan: %s'%(origfilename,e))
-                    # self.output(1,traceback.format_exc())
+                    error.append('File %s generated an exception in annotatePNGGlycan: %s'%(origfilename,repr(e)))
+                    print(traceback.format_exc(),file=sys.stderr)
             elif extn in ('pdf',):
                 try:
                     annotatePDFGlycan(work_dict)
                 except Exception as e:
-                    error.append('File %s generated an exception in annotatePDFGlycan: %s'%(origfilename,e))
-                    # self.output(1,traceback.format_exc())
+                    error.append('File %s generated an exception in annotatePDFGlycan: %s'%(origfilename,repr(e)))
+                    print(traceback.format_exc(),file=sys.stderr)
             else:
                 error.append('File %s had an Unsupported file extension: %s.'%(origfilename,extn))
                 # self.output(1,'File %s had an Unsupported file extension: %s.'%(origfilename,extn))

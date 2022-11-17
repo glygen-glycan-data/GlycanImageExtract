@@ -348,11 +348,11 @@ def annotatePDFGlycan(work_dict):
             w = x1 - x0
             rectangle = (x0 - 1, y0 - 1, x1 + 1, y1 + 1)
             #print(f"@@,xref:{xref},img_name:{img_name}, coordinate:{img[3]}")
-            annotate_log.write(f"\n@@,xref:{xref},img_name:{img_name}, coordinate:{img[3]}")
+            annotate_log.write(f"\n@@,xref:{xref},img_name:{img_name}, coordinate:{img[3]}, w:{w}, h:{h}, w*h:{h*w}")
 
             pixel = fitz.Pixmap(doc, xref)
             #page.drawRect(rectangle, color=fitz.utils.getColor("red"), fill=fitz.utils.getColor("red"), overlay=False)
-            if h > 60 and w > 60:
+            if (h > 60 and w > 60) or (h*w > 360):
                 pixel.writePNG(rf"{workdir}/test/p{p}-{xref}.png")  # xref is the xref of the image
                 #print(f" save image to {workdir}test/p{p}-{xref}.png")
                 annotate_log.write(f"\n save image to {workdir}test/p{p}-{xref}.png")
